@@ -107,6 +107,22 @@ def create_app(model_path=MODEL_PATH, metrics_path=METRICS_PATH) -> Flask:
     started = time.time()
     app.config["MODEL_STORE"] = store
 
+    @app.get("/")
+    def index():
+        return jsonify(
+            {
+                "service": "btc-forecast-api",
+                "description": "7-day Bitcoin (BTC-USD) closing price forecaster",
+                "model_version": store.version,
+                "endpoints": {
+                    "GET /health": "service status, uptime and model version",
+                    "POST /predict": "forecast; body: {forecast_days: 1-30, history: [...]}",
+                    "GET /metrics": "latest validation metrics (MAE, RMSE, MAPE)",
+                    "POST /reload": "reload model from disk (requires X-API-Key)",
+                },
+            }
+        )
+
     @app.get("/health")
     def health():
         store.refresh_if_changed()

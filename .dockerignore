@@ -1,0 +1,15 @@
+venv/
+.git/
+.github/
+.pytest_cache/
+**/__pycache__/
+*.pyc
+data/
+models/
+tests/
+pics/
+dags/
+kubeflow/
+k8s/
+sample_requests/
+*.md

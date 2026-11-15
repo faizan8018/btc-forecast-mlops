@@ -100,3 +100,9 @@ def test_unknown_route_returns_json_404(client):
 
 def test_wrong_method_returns_405(client):
     assert client.get("/predict").status_code == 405
+
+
+def test_index_lists_endpoints(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "POST /predict" in r.get_json()["endpoints"]
