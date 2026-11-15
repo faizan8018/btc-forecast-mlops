@@ -28,10 +28,10 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Lint with flake8
-        run: flake8 app src tests
+        run: flake8 app src tests dags kubeflow
 
       - name: Check formatting with black
-        run: black --check app src tests
+        run: black --check app src tests dags kubeflow
 
       - name: Run pytest
         run: pytest -v

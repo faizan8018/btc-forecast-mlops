@@ -6,3 +6,4 @@ data/
 models/*.pkl
 models/*.json
 .env
+.kfp/

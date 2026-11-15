@@ -1,0 +1,193 @@
+# PIPELINE DEFINITION
+# Name: btc-7day-forecast-pipeline
+# Description: Ingest BTC-USD data, engineer features and train a 7-day forecasting model
+# Inputs:
+#    mape_threshold: float [Default: 10.0]
+components:
+  comp-generate-features:
+    executorLabel: exec-generate-features
+    inputDefinitions:
+      artifacts:
+        raw_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        features:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-ingest-data:
+    executorLabel: exec-ingest-data
+    outputDefinitions:
+      artifacts:
+        raw_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-train-model:
+    executorLabel: exec-train-model
+    inputDefinitions:
+      artifacts:
+        features:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        mape_threshold:
+          parameterType: NUMBER_DOUBLE
+    outputDefinitions:
+      artifacts:
+        metrics:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-generate-features:
+      container:
+        args:
+        - '{{$.inputs.artifacts[''raw_data''].path}}'
+        - '{{$.outputs.artifacts[''features''].path}}'
+        command:
+        - python
+        - -c
+        - '
+
+          import sys, os
+
+          import pandas as pd
+
+          from src.features import clean_and_engineer
+
+          raw_path, out = sys.argv[1], sys.argv[2]
+
+          os.makedirs(os.path.dirname(out), exist_ok=True)
+
+          feats = clean_and_engineer(pd.read_csv(raw_path))
+
+          feats.to_csv(out, index=False)
+
+          print(f"Features: {list(feats.columns)} rows={len(feats)}")
+
+          '
+        image: faizandocker387/btc-forecast-api:latest
+        resources:
+          cpuLimit: 0.5
+          memoryLimit: 0.512
+    exec-ingest-data:
+      container:
+        args:
+        - '{{$.outputs.artifacts[''raw_data''].path}}'
+        command:
+        - python
+        - -c
+        - '
+
+          import sys, os
+
+          from src.etl_fetch import fetch_btc_data
+
+          out = sys.argv[1]
+
+          os.makedirs(os.path.dirname(out), exist_ok=True)
+
+          df = fetch_btc_data()
+
+          df.to_csv(out, index=False)
+
+          print(f"Ingested {len(df)} rows -> {out}")
+
+          '
+        image: faizandocker387/btc-forecast-api:latest
+        resources:
+          cpuLimit: 0.5
+          memoryLimit: 0.512
+    exec-train-model:
+      container:
+        args:
+        - '{{$.inputs.artifacts[''features''].path}}'
+        - '{{$.outputs.artifacts[''model''].path}}'
+        - '{{$.outputs.artifacts[''metrics''].path}}'
+        - '{{$.inputs.parameters[''mape_threshold'']}}'
+        command:
+        - python
+        - -c
+        - '
+
+          import sys, os
+
+          from pathlib import Path
+
+          os.environ["MAPE_THRESHOLD"] = sys.argv[4]
+
+          from src.train_forecast import train
+
+          m = train(raw_path=Path(sys.argv[1]), model_path=Path(sys.argv[2]), metrics_path=Path(sys.argv[3]))
+
+          print(f"MAE={m[''MAE'']} RMSE={m[''RMSE'']} MAPE={m[''MAPE'']}% passed={m[''passed_threshold'']}")
+
+          '
+        image: faizandocker387/btc-forecast-api:latest
+        resources:
+          cpuLimit: 0.5
+          memoryLimit: 0.512
+pipelineInfo:
+  description: Ingest BTC-USD data, engineer features and train a 7-day forecasting
+    model
+  name: btc-7day-forecast-pipeline
+root:
+  dag:
+    tasks:
+      generate-features:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-generate-features
+        dependentTasks:
+        - ingest-data
+        inputs:
+          artifacts:
+            raw_data:
+              taskOutputArtifact:
+                outputArtifactKey: raw_data
+                producerTask: ingest-data
+        taskInfo:
+          name: generate-features
+      ingest-data:
+        cachingOptions: {}
+        componentRef:
+          name: comp-ingest-data
+        taskInfo:
+          name: ingest-data
+      train-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-model
+        dependentTasks:
+        - generate-features
+        inputs:
+          artifacts:
+            features:
+              taskOutputArtifact:
+                outputArtifactKey: features
+                producerTask: generate-features
+          parameters:
+            mape_threshold:
+              componentInputParameter: mape_threshold
+        taskInfo:
+          name: train-model
+  inputDefinitions:
+    parameters:
+      mape_threshold:
+        defaultValue: 10.0
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.9.0

@@ -60,3 +60,29 @@ def regression_metrics(y_true, y_pred) -> dict:
     rmse = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
     mape = float(np.mean(np.abs((y_true - y_pred) / y_true)) * 100)
     return {"MAE": round(mae, 2), "RMSE": round(rmse, 2), "MAPE": round(mape, 3)}
+
+
+def clean_and_engineer(raw: pd.DataFrame) -> pd.DataFrame:
+    """Clean raw OHLCV data and add technical indicators.
+
+    Keeps Date + Close (needed by training) and adds 7/30-day moving
+    averages, 7/30-day volatility and daily returns for analysis.
+    """
+    df = raw.copy()
+    df["Date"] = pd.to_datetime(df["Date"])
+    df = df.dropna(subset=["Close"]).drop_duplicates(subset="Date").sort_values("Date")
+    df = df[df["Close"] > 0]
+    feats = build_features(df["Close"].reset_index(drop=True))
+    out = pd.DataFrame(
+        {
+            "Date": df["Date"].dt.date.values,
+            "Close": df["Close"].values,
+            "Volume": df["Volume"].values if "Volume" in df else np.nan,
+            "ma_7": feats["ma_7"].values,
+            "ma_30": feats["ma_30"].values,
+            "volatility_7": feats["volatility_7"].values,
+            "volatility_30": df["Close"].pct_change().rolling(30).std().values,
+            "return_1": feats["return_1"].values,
+        }
+    )
+    return out.reset_index(drop=True)

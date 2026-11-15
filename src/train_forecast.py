@@ -9,9 +9,11 @@ Usage :  python -m src.train_forecast
 
 import json
 import logging
+import os
+import pickle
 from datetime import datetime, timezone
+from pathlib import Path
 
-import joblib
 import pandas as pd
 from sklearn.linear_model import Ridge
 from sklearn.pipeline import make_pipeline
@@ -22,6 +24,20 @@ from src.features import FEATURE_COLS, make_supervised, recursive_forecast, regr
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("train_forecast")
+
+
+def save_artifact(artifact: dict, path) -> None:
+    """Save the model with Python's standard C pickler, atomically.
+
+    Airflow imports `dill`, which patches the pure-Python pickler that
+    joblib.dump uses, so files saved that way need `dill` to load. The C
+    pickler is not affected, so the model loads anywhere scikit-learn exists.
+    Writing to a temp file + os.replace means the API never reads a half-written file.
+    """
+    tmp = Path(f"{path}.tmp")
+    with open(tmp, "wb") as f:
+        pickle.dump(artifact, f, protocol=pickle.HIGHEST_PROTOCOL)
+    os.replace(tmp, path)
 
 
 def new_model():
@@ -85,7 +101,7 @@ def train(raw_path=RAW_DATA_PATH, model_path=MODEL_PATH, metrics_path=METRICS_PA
             "last_date": str(close.index[-1].date()),
             "history": close.values[-60:].tolist(),
         }
-        joblib.dump(artifact, model_path)
+        save_artifact(artifact, model_path)
         log.info("Model %s registered -> %s", version, model_path)
     else:
         log.warning("Model NOT registered (MAPE above threshold); keeping previous model")

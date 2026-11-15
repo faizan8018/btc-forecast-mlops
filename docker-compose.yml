@@ -1,0 +1,71 @@
+# Local integration environment: Flask API + Airflow (LocalExecutor) + Postgres
+# Start:  docker compose up -d --build      Stop:  docker compose down
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: btc-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    image: btc-forecast-api:latest
+    container_name: btc-api
+    ports:
+      - "5000:5000"
+    environment:
+      LOG_LEVEL: INFO
+      MODEL_STAGE: staging
+      API_KEY: ${API_KEY:-local-dev-key}
+    volumes:
+      - ./models:/app/models
+
+  airflow:
+    build:
+      context: .
+      dockerfile: airflow/Dockerfile
+    image: btc-airflow:latest
+    container_name: btc-airflow
+    command: standalone
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "false"
+      AIRFLOW__WEBSERVER__WORKERS: "2"
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: airflow
+      _AIRFLOW_WWW_USER_PASSWORD: airflow
+      AIRFLOW_CONN_BTC_POSTGRES: postgresql://airflow:airflow@postgres:5432/airflow
+      PYTHONPATH: /opt/airflow/project
+      DATA_DIR: /opt/airflow/project/data
+      MODEL_DIR: /opt/airflow/project/models
+      API_URL: http://api:5000
+      API_KEY: ${API_KEY:-local-dev-key}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/project/src
+      - ./data:/opt/airflow/project/data
+      - ./models:/opt/airflow/project/models
+
+volumes:
+  pgdata:

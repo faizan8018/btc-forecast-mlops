@@ -30,3 +30,18 @@ def test_recursive_forecast_needs_enough_history(synthetic_close):
 def test_regression_metrics_perfect_prediction():
     m = regression_metrics([1, 2, 3], [1, 2, 3])
     assert m == {"MAE": 0.0, "RMSE": 0.0, "MAPE": 0.0}
+
+
+def test_clean_and_engineer_adds_indicators(synthetic_close):
+    import pandas as pd
+
+    from src.features import clean_and_engineer
+
+    raw = pd.DataFrame(
+        {"Date": synthetic_close.index, "Close": synthetic_close.values, "Volume": 1.0}
+    )
+    raw.loc[5, "Close"] = None  # dirty row must be dropped
+    out = clean_and_engineer(raw)
+    assert len(out) == len(raw) - 1
+    assert {"Date", "Close", "ma_7", "ma_30", "volatility_7"} <= set(out.columns)
+    assert out["ma_30"].iloc[-1] > 0
